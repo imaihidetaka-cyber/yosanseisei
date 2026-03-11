@@ -114,7 +114,11 @@ export default function App() {
         data = await response.json();
       } else {
         const text = await response.text();
-        throw new Error(`サーバーから予期せぬレスポンスが返されました: ${text.substring(0, 100)}...`);
+        console.error("Non-JSON response (Analysis):", text);
+        if (response.status === 504 || response.status === 502) {
+          throw new Error("サーバーがタイムアウトしました。ファイルサイズを小さくするか、しばらく待ってから再度お試しください。");
+        }
+        throw new Error(`サーバーエラー (${response.status}): ${text.substring(0, 100)}...`);
       }
 
       if (!response.ok) {
@@ -157,7 +161,11 @@ export default function App() {
         data = await response.json();
       } else {
         const text = await response.text();
-        throw new Error(`サーバーから予期せぬレスポンスが返されました: ${text.substring(0, 100)}...`);
+        console.error("Non-JSON response (Budget):", text);
+        if (response.status === 504 || response.status === 502) {
+          throw new Error("サーバーがタイムアウトしました。しばらく待ってから再度お試しください。");
+        }
+        throw new Error(`サーバーエラー (${response.status}): ${text.substring(0, 100)}...`);
       }
 
       if (!response.ok) {

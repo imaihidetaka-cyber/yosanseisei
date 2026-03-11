@@ -10,8 +10,8 @@ async function startServer() {
   const PORT = 3000;
 
   // PDFなどの大容量データを扱えるように制限を拡張
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+  app.use(express.json({ limit: '100mb' }));
+  app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
   // --- APIエンドポイント ---
   app.post("/api/analyze", async (req, res) => {
@@ -97,7 +97,7 @@ async function startServer() {
 
       console.log("Calling Gemini API for analysis...");
       const result = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3-flash-preview",
         contents: {
           parts: [
             { text: analysisPrompt },
@@ -177,7 +177,7 @@ async function startServer() {
 
       console.log("Calling Gemini API for budget planning...");
       const result = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3-flash-preview",
         contents: { parts: [{ text: budgetPrompt }] },
       });
 
