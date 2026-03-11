@@ -9,9 +9,20 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // リクエストロガー
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+  });
+
   // PDFなどの大容量データを扱えるように制限を拡張
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+  // ヘルスチェック
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", env: process.env.NODE_ENV });
+  });
 
   // --- APIエンドポイント ---
   app.post("/api/analyze", async (req, res) => {
