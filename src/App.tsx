@@ -95,9 +95,10 @@ export default function App() {
     setError(null);
 
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey || apiKey === "undefined") {
-        throw new Error('Gemini APIキーが設定されていません。Netlifyの環境変数でGEMINI_API_KEYを設定してください。');
+      const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+      
+      if (!apiKey || apiKey === "undefined" || apiKey === "") {
+        throw new Error('Gemini APIキーが設定されていません。Netlifyの環境変数で GEMINI_API_KEY を設定し、再デプロイ（Clear cache and deploy）を行ってください。');
       }
       const ai = new GoogleGenAI({ apiKey });
       const base64Data = await readFileAsBase64(file);
