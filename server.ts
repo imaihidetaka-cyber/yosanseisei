@@ -11,14 +11,22 @@ async function startServer() {
 
   // PDFなどの大容量データを扱えるように制限を拡張
   app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // --- APIエンドポイント ---
   app.post("/api/analyze", async (req, res) => {
     try {
       const { base64Data, manualHints } = req.body;
+
+      if (!base64Data) {
+        console.error("No base64Data received in /api/analyze");
+        return res.status(400).json({ error: "PDFデータが送信されていません。" });
+      }
+
       const apiKey = process.env.GEMINI_API_KEY;
 
       if (!apiKey) {
+        console.error("GEMINI_API_KEY is missing");
         return res.status(500).json({ error: "サーバー側でAPIキーが設定されていません。" });
       }
 
@@ -87,6 +95,7 @@ async function startServer() {
            ・この数字の持ち主に、今すぐ伝えたいことを1つだけ
       `;
 
+      console.log("Calling Gemini API for analysis...");
       const result = await ai.models.generateContent({
         model: "gemini-2.0-flash",
         contents: {
@@ -102,17 +111,31 @@ async function startServer() {
         },
       });
 
+      if (!result.text) {
+        console.error("Gemini returned empty text");
+        throw new Error("解析結果が得られませんでした。");
+      }
+
+      console.log("Analysis successful");
       res.json({ text: result.text });
 
     } catch (error: any) {
-      console.error("Analysis error:", error);
-      res.status(500).json({ error: error.message || "解析中にエラーが発生しました。" });
+      console.error("Analysis error details:", error);
+      res.status(500).json({ 
+        error: error.message || "解析中にエラーが発生しました。",
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
   });
 
   app.post("/api/budget", async (req, res) => {
     try {
       const { analysisResult, busyMonths, selectedRequests, freeTextRequest } = req.body;
+
+      if (!analysisResult) {
+        return res.status(400).json({ error: "分析結果が送信されていません。" });
+      }
+
       const apiKey = process.env.GEMINI_API_KEY;
 
       if (!apiKey) {
@@ -152,17 +175,34 @@ async function startServer() {
            ・この計画を達成するために、明日から意識すべきこと
       `;
 
+      console.log("Calling Gemini API for budget planning...");
       const result = await ai.models.generateContent({
         model: "gemini-2.0-flash",
         contents: { parts: [{ text: budgetPrompt }] },
       });
 
+      if (!result.text) {
+        throw new Error("予算計画が得られませんでした。");
+      }
+
+      console.log("Budget planning successful");
       res.json({ text: result.text });
 
     } catch (error: any) {
-      console.error("Budget error:", error);
-      res.status(500).json({ error: error.message || "予算計画の作成中にエラーが発生しました。" });
+      console.error("Budget error details:", error);
+      res.status(500).json({ 
+        error: error.message || "予算計画の作成中にエラーが発生しました。",
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      });
     }
+  });
+
+  // グローバルエラーハンドラー
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Global error handler caught:", err);
+    res.status(err.status || 500).json({
+      error: err.message || "予期せぬサーバーエラーが発生しました。",
+    });
   });
 
   // --- Vite 開発サーバーの設定 ---

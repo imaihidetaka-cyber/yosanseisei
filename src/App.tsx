@@ -108,16 +108,23 @@ export default function App() {
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "解析中にエラーが発生しました。");
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(`サーバーから予期せぬレスポンスが返されました: ${text.substring(0, 100)}...`);
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "解析中にエラーが発生しました。");
+      }
+
       setResult({ step1: data.text || "分析結果を取得できませんでした。" });
       setStep('analysis');
     } catch (err: any) {
-      console.error(err);
+      console.error("Analysis Error:", err);
       setError(err.message || '分析中にエラーが発生しました。ファイルが読み取り可能か確認してください。');
     } finally {
       setIsAnalyzing(false);
@@ -144,16 +151,23 @@ export default function App() {
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "予算計画の作成中にエラーが発生しました。");
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        throw new Error(`サーバーから予期せぬレスポンスが返されました: ${text.substring(0, 100)}...`);
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "予算計画の作成中にエラーが発生しました。");
+      }
+
       setResult(prev => ({ ...prev!, step2: data.text || "予算計画を取得できませんでした。" }));
       setStep('budget');
     } catch (err: any) {
-      console.error(err);
+      console.error("Budget Error:", err);
       setError(err.message || '予算計画の作成中にエラーが発生しました。');
     } finally {
       setIsAnalyzing(false);
