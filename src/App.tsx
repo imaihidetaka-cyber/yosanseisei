@@ -95,99 +95,30 @@ export default function App() {
     setError(null);
 
     try {
-      const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
-      
-      if (!apiKey || apiKey === "undefined" || apiKey === "") {
-        throw new Error('Gemini APIキーが設定されていません。Netlifyの環境変数で GEMINI_API_KEY を設定し、再デプロイ（Clear cache and deploy）を行ってください。');
-      }
-      const ai = new GoogleGenAI({ apiKey });
       const base64Data = await readFileAsBase64(file);
 
-      const promptStep1 = `
-        添付した確定申告書（PDF）を精密に読み取り、経営分析レポートを作成してください。
-
-        【あなたの役割】
-        中小企業・個人事業主専門の経営アドバイザーとして分析します。
-        このアドバイスは「確芯経営」というブランドに基づいています。
-        税務上の解釈ではなく、経営判断に使うための分析を行ってください。
-
-        【確芯経営の分析フレームワーク】
-        支出を以下の3つに分類して分析します：
-        1. ①変動費：売上原価、外注費など売上に連動する費用。
-        2. ②未来投資費：研修費、接待交際費、広告宣伝費、減価償却費など、将来の売上を作るための費用。
-        3. ③経営基盤費：地代家賃、水道光熱費、租税公課など、事業維持に必要な固定費。
-
-        【未来投資費の基準】
-        ・粗利（売上 - 変動費）に対する「未来投資費」の割合を算出してください。
-        ・目標基準：15%
-        ・15%より高い場合：使い過ぎの可能性を指摘。
-        ・15%より低い場合：将来への投資不足（守りに入りすぎ）の可能性を指摘。
-
-        【分析の重要ルール】
-        1. 日本の「青色申告決算書」または「収支内訳書」のフォーマットを前提に数値を抽出してください。
-        2. 特に以下の項目を重点的に探してください：
-           - 売上金額 (1)
-           - 売上原価 (仕入金額など)
-           - 経費（租税公課、荷造運賃、水道光熱費、旅費交通費、通信費、広告宣伝費、接待交際費、損害保険料、修繕費、消耗品費、福利厚生費、給料賃金、外注工賃、利子割引料、地代家賃、減価償却費など）
-           - 所得金額 (43)
-        3. 抽出した数値で「売上 - 変動費 = 粗利」「粗利 - 未来投資費 - 経営基盤費 = 利益」の整合性をチェックしてください。
-        4. ユーザーからの補足情報がある場合は、それを最優先の正解データとして扱ってください。
-
-        【ユーザーからの補足情報】
-        ${manualHints || 'なし'}
-
-        【読み取れなかった項目があれば】
-        「〇〇が読み取れませんでした。わかれば入力してください」と冒頭に明記してください。
-
-        【出力形式】
-        Markdown形式で、以下の構成で出力してください。見出しには適切な絵文字を付けてください。
-        **重要：表（Table）は使用せず、箇条書きのリスト形式で出力してください。また、視認性を高めるため、各セクションの間には必ず空行（2つの改行）を入れてください。**
-
-        1. ## 📊 売上・粗利・利益の構造サマリー
-           ・売上、変動費、粗利（売上-変動費）、利益の具体的な数値
-           ・粗利に対する「未来投資費」の割合（%）
-           ・15%基準に照らした投資バランスの評価（投資過多か、投資不足か）
-
-        2. ## 🔍 確芯経営による経費分析
-           ・**①変動費**: 主な科目と合計額
-           ・**②未来投資費**: 研修、広告、交際費等の合計と、将来への投資状況
-           ・**③経営基盤費**: 固定費の合計と、削減の余地
-           ・経営上のアドバイス
-
-        3. ## 💡 改善が見込める経費トップ3
-           ・1位：[科目名]（金額）- 理由と見直しの方向性
-           ・2位：[科目名]（金額）- 理由と見直しの方向性
-           ・3位：[科目名]（金額）- 理由と見直しの方向性
-
-        4. ## 🚩 経営上の課題サマリー（3行以内）
-           ・数字から読み取れる"今最も注目すべきポイント"
-
-        5. ## ✉️ 来期に向けた一言メッセージ
-           ・この数字の持ち主に、今すぐ伝えたいことを1つだけ
-      `;
-
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: MODEL_NAME,
-        contents: [
-          {
-            parts: [
-              { text: promptStep1 },
-              {
-                inlineData: {
-                  mimeType: "application/pdf",
-                  data: base64Data,
-                },
-              },
-            ],
-          },
-        ],
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          base64Data,
+          manualHints,
+        }),
       });
 
-      setResult({ step1: response.text || "分析結果を取得できませんでした。" });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "解析中にエラーが発生しました。");
+      }
+
+      const data = await response.json();
+      setResult({ step1: data.text || "分析結果を取得できませんでした。" });
       setStep('analysis');
     } catch (err: any) {
       console.error(err);
-      setError('分析中にエラーが発生しました。ファイルが読み取り可能か確認してください。');
+      setError(err.message || '分析中にエラーが発生しました。ファイルが読み取り可能か確認してください。');
     } finally {
       setIsAnalyzing(false);
     }
@@ -200,67 +131,30 @@ export default function App() {
     setError(null);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      
-      const promptStep2 = `
-        前述の分析結果をもとに、来期1年間の予算管理計画を作成してください。
-
-        【追加情報】
-        ・売上が多い月・少ない月：${busyMonths || '特になし'}
-        ・来期に変えたいこと（要望）：
-          - 選択された項目：${selectedRequests.join('、') || '特になし'}
-          - 自由記述：${freeTextRequest || '特になし'}
-
-        【出力形式】
-        Markdown形式で、以下の構成で出力してください。見出しには適切な絵文字を付けてください。
-        **重要：表（Table）は使用せず、箇条書きのリスト形式で出力してください。また、視認性を高めるため、各セクションの間には必ず空行（2つの改行）を入れてください。**
-
-        1. ## 📈 月別売上目標の設計
-           ・今年の実績をベースに、月ごとの目安金額と根拠
-           ・目標達成に必要な行動（受注件数・単価の目安）
-
-        2. ## 📋 確芯経営に基づく経費管理
-           ・**①変動費**: 投資対効果の考え方（売上に連動しているか）
-           ・**②未来投資費**: 粗利の15%を目指すための具体的な投資・見直し案
-           ・**③経営基盤費**: 維持・削減の具体的なアクション
-           ・**削減検討リスト**: 優先的に手をつけるべき項目
-
-        3. ## 🔢 毎月確認する3つの数字
-           ・何を・なぜ・どのタイミングで見るか
-
-        4. ## 📝 来期の確定申告を楽にするための習慣リスト
-           ・今月からできる具体的アクション（5つ以内）
-
-        5. ## ✨ あなたへのひと言メッセージ
-           ・今の状況から、最初に取り組むべきことを1つだけ
-
-        ---
-        ## 💡 経営を「見える化」するために
-        これらの項目をもとに予算書を作成し、**毎月管理すること**が何より大切です。
-        
-        会計ソフト（freeeなど）の活用や税理士への依頼など、あなたが「事業そのもの」に集中しつつ、数字の状況を常に把握できる体制を整えましょう。
-        
-        予算の策定や具体的な管理方法について、私に直接相談いただくことも可能です。
-        **初回相談は無料**ですので、どうぞ遠慮なくお申し込みください。
-        
-        ### ✉️ 個別相談のお申し込み
-        以下のリンクより、現在のお悩みをお聞かせください。
-        👉 **[【無料】個別相談に申し込む（こちらをクリック）](https://www.reservestock.jp/inquiry/148275)**
-
-        前述の分析結果：
-        ${result.step1}
-      `;
-
-      const response: GenerateContentResponse = await ai.models.generateContent({
-        model: MODEL_NAME,
-        contents: [{ parts: [{ text: promptStep2 }] }],
+      const response = await fetch("/api/budget", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          analysisResult: result.step1,
+          busyMonths,
+          selectedRequests,
+          freeTextRequest,
+        }),
       });
 
-      setResult(prev => ({ ...prev!, step2: response.text || "予算計画を取得できませんでした。" }));
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "予算計画の作成中にエラーが発生しました。");
+      }
+
+      const data = await response.json();
+      setResult(prev => ({ ...prev!, step2: data.text || "予算計画を取得できませんでした。" }));
       setStep('budget');
     } catch (err: any) {
       console.error(err);
-      setError('予算計画の作成中にエラーが発生しました。');
+      setError(err.message || '予算計画の作成中にエラーが発生しました。');
     } finally {
       setIsAnalyzing(false);
     }

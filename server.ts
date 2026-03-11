@@ -1,0 +1,185 @@
+import express from "express";
+import { createServer as createViteServer } from "vite";
+import { GoogleGenAI } from "@google/genai";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+async function startServer() {
+  const app = express();
+  const PORT = 3000;
+
+  // PDFなどの大容量データを扱えるように制限を拡張
+  app.use(express.json({ limit: '50mb' }));
+
+  // --- APIエンドポイント ---
+  app.post("/api/analyze", async (req, res) => {
+    try {
+      const { base64Data, manualHints } = req.body;
+      const apiKey = process.env.GEMINI_API_KEY;
+
+      if (!apiKey) {
+        return res.status(500).json({ error: "サーバー側でAPIキーが設定されていません。" });
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const analysisPrompt = `
+        添付した確定申告書（PDF）を精密に読み取り、経営分析レポートを作成してください。
+
+        【あなたの役割】
+        中小企業・個人事業主専門の経営アドバイザーとして分析します。
+        このアドバイスは「確芯経営」というブランドに基づいています。
+        税務上の解釈ではなく、経営判断に使うための分析を行ってください。
+
+        【確芯経営の分析フレームワーク】
+        支出を以下の3つに分類して分析します：
+        1. ①変動費：売上原価、外注費など売上に連動する費用。
+        2. ②未来投資費：研修費、接待交際費、広告宣伝費、減価償却費など、将来の売上を作るための費用。
+        3. ③経営基盤費：地代家賃、水道光熱費、租税公課など、事業維持に必要な固定費。
+
+        【未来投資費の基準】
+        ・粗利（売上 - 変動費）に対する「未来投資費」の割合を算出してください。
+        ・目標基準：15%
+        ・15%より高い場合：使い過ぎの可能性を指摘。
+        ・15%より低い場合：将来への投資不足（守りに入りすぎ）の可能性を指摘。
+
+        【分析の重要ルール】
+        1. 日本の「青色申告決算書」または「収支内訳書」のフォーマットを前提に数値を抽出してください。
+        2. 特に以下の項目を重点的に探してください：
+           - 売上金額 (1)
+           - 売上原価 (仕入金額など)
+           - 経費（租税公課、荷造運賃、水道光熱費、旅費交通費、通信費、広告宣伝費、接待交際費、損害保険料、修繕費、消耗品費、福利厚生費、給料賃金、外注工賃、利子割引料、地代家賃、減価償却費など）
+           - 所得金額 (43)
+        3. 抽出した数値で「売上 - 変動費 = 粗利」「粗利 - 未来投資費 - 経営基盤費 = 利益」の整合性をチェックしてください。
+        4. ユーザーからの補足情報がある場合は、それを最優先の正解データとして扱ってください。
+
+        【ユーザーからの補足情報】
+        ${manualHints || 'なし'}
+
+        【読み取れなかった項目があれば】
+        「〇〇が読み取れませんでした。わかれば入力してください」と冒頭に明記してください。
+
+        【出力形式】
+        Markdown形式で、以下の構成で出力してください。見出しには適切な絵文字を付けてください。
+        **重要：表（Table）は使用せず、箇条書きのリスト形式で出力してください。また、視認性を高めるため、各セクションの間には必ず空行（2つの改行）を入れてください。**
+
+        1. ## 📊 売上・粗利・利益の構造サマリー
+           ・売上、変動費、粗利（売上-変動費）、利益の具体的な数値
+           ・粗利に対する「未来投資費」の割合（%）
+           ・15%基準に照らした投資バランスの評価（投資過多か、投資不足か）
+
+        2. ## 🔍 確芯経営による経費分析
+           ・**①変動費**: 主な科目と合計額
+           ・**②未来投資費**: 研修、広告、交際費等の合計と、将来への投資状況
+           ・**③経営基盤費**: 固定費の合計と、削減の余地
+           ・経営上のアドバイス
+
+        3. ## 💡 改善が見込める経費トップ3
+           ・1位：[科目名]（金額）- 理由と見直しの方向性
+           ・2位：[科目名]（金額）- 理由と見直しの方向性
+           ・3位：[科目名]（金額）- 理由と見直しの方向性
+
+        4. ## 🚩 経営上の課題サマリー（3行以内）
+           ・数字から読み取れる"今最も注目すべきポイント"
+
+        5. ## ✉️ 来期に向けた一言メッセージ
+           ・この数字の持ち主に、今すぐ伝えたいことを1つだけ
+      `;
+
+      const result = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: {
+          parts: [
+            { text: analysisPrompt },
+            {
+              inlineData: {
+                mimeType: "application/pdf",
+                data: base64Data,
+              },
+            },
+          ],
+        },
+      });
+
+      res.json({ text: result.text });
+
+    } catch (error: any) {
+      console.error("Analysis error:", error);
+      res.status(500).json({ error: error.message || "解析中にエラーが発生しました。" });
+    }
+  });
+
+  app.post("/api/budget", async (req, res) => {
+    try {
+      const { analysisResult, busyMonths, selectedRequests, freeTextRequest } = req.body;
+      const apiKey = process.env.GEMINI_API_KEY;
+
+      if (!apiKey) {
+        return res.status(500).json({ error: "サーバー側でAPIキーが設定されていません。" });
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const budgetPrompt = `
+        前述の分析結果をもとに、来期1年間の予算管理計画を作成してください。
+
+        【分析結果】
+        ${analysisResult}
+
+        【追加情報】
+        ・売上が多い月・少ない月：${busyMonths || '特になし'}
+        ・来期に変えたいこと（要望）：
+          - 選択された項目：${selectedRequests.join('、') || '特になし'}
+          - 自由記述：${freeTextRequest || '特なし'}
+
+        【出力形式】
+        Markdown形式で、以下の構成で出力してください。見出しには適切な絵文字を付けてください。
+        **重要：表（Table）は使用せず、箇条書きのリスト形式で出力してください。また、視認性を高めるため、各セクションの間には必ず空行（2つの改行）を入れてください。**
+
+        1. ## 📈 月別売上目標の設計
+           ・今年の実績をベースに、月ごとの目安金額と根拠
+
+        2. ## 💰 経費予算の配分（確芯経営モデル）
+           ・①変動費：売上目標に対する目安
+           ・②未来投資費：具体的に何にいくら使うべきか（粗利の15%目安）
+           ・③経営基盤費：削減目標と維持すべき項目
+
+        3. ## 🚀 来期の重点アクションプラン
+           ・要望（${selectedRequests.join('、')}）を叶えるための具体的な3ステップ
+
+        4. ## 💡 経営者へのアドバイス
+           ・この計画を達成するために、明日から意識すべきこと
+      `;
+
+      const result = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: { parts: [{ text: budgetPrompt }] },
+      });
+
+      res.json({ text: result.text });
+
+    } catch (error: any) {
+      console.error("Budget error:", error);
+      res.status(500).json({ error: error.message || "予算計画の作成中にエラーが発生しました。" });
+    }
+  });
+
+  // --- Vite 開発サーバーの設定 ---
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    // 本番環境（Netlifyなど）での静的ファイル配信
+    app.use(express.static("dist"));
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();
