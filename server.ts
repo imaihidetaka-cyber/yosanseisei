@@ -5,32 +5,36 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+console.log("[SERVER] Script starting...");
+
 async function startServer() {
+  console.log("[SERVER] startServer() called");
   const app = express();
   const PORT = 3000;
 
-  // リクエストロガー
+  // 1. ヘルスチェック（最優先）
+  app.get("/api/health", (req, res) => {
+    console.log("[SERVER] Health check hit");
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // 2. ログ
   app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    console.log(`[REQUEST] ${req.method} ${req.url}`);
     next();
   });
 
-  // PDFなどの大容量データを扱えるように制限を拡張
+  // 3. パース
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
-  // ヘルスチェック
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", env: process.env.NODE_ENV });
-  });
-
-  // --- APIエンドポイント ---
+  // 4. APIエンドポイント
   app.post("/api/analyze", async (req, res) => {
+    console.log("[SERVER] /api/analyze hit");
     try {
       const { base64Data, manualHints } = req.body;
 
       if (!base64Data) {
-        console.error("No base64Data received in /api/analyze");
         return res.status(400).json({ error: "PDFデータが送信されていません。" });
       }
 
@@ -140,6 +144,7 @@ async function startServer() {
   });
 
   app.post("/api/budget", async (req, res) => {
+    console.log("[SERVER] /api/budget hit");
     try {
       const { analysisResult, busyMonths, selectedRequests, freeTextRequest } = req.body;
 
@@ -218,19 +223,35 @@ async function startServer() {
 
   // --- Vite 開発サーバーの設定 ---
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    console.log("[SERVER] Starting Vite in middleware mode...");
+    try {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+      console.log("[SERVER] Vite middleware mounted.");
+    } catch (viteError) {
+      console.error("[SERVER] Failed to start Vite:", viteError);
+    }
   } else {
-    // 本番環境（Netlifyなど）での静的ファイル配信
+    console.log("[SERVER] Serving static files from dist...");
     app.use(express.static("dist"));
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`[SERVER] Server is listening on http://0.0.0.0:${PORT}`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[SERVER] Port ${PORT} is already in use.`);
+    } else {
+      console.error("[SERVER] Server error:", err);
+    }
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("[SERVER] Fatal error during startup:", err);
+});
