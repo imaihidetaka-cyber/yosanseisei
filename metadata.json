@@ -1,0 +1,5 @@
+{
+  "name": "確芯経営アドバイザー",
+  "description": "確定申告書や決算書のPDFをAIが分析し、経営改善レポートと来期の予算計画を自動生成します。",
+  "requestFramePermissions": []
+}
